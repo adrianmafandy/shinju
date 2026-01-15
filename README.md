@@ -1,4 +1,4 @@
-# Shinju 神樹
+# Shinju (神樹)
 
 A Python 3 remake of the classic `tree` command with powerful search functionality.
 

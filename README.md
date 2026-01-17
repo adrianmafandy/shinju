@@ -19,6 +19,9 @@ A Python 3 remake of the classic `tree` command with powerful search functionali
 - 🎨 **Color Highlighting** - Visual distinction for matches
 - 📋 **Match Snippets** - Shows first match context inline
 - ⚡ **Match-Only Mode** - Filter output to show only matches
+- 📊 **Progress Indicator** - Live scanning progress with percentage
+- 🔇 **Quiet Mode** - Hide banner for cleaner output
+- ⛔ **Graceful Interrupt** - Clean exit on Ctrl+C
 
 ## Installation
 
@@ -51,6 +54,7 @@ shinju [OPTIONS] [DIRECTORY]
 | `-r, --regex` | Treat search pattern as regex |
 | `-i, --ignore-case` | Case-insensitive search |
 | `-m, --matches-only` | Show only matching files/directories |
+| `-q, --quiet` | Hide the banner (quiet mode) |
 
 ### Examples
 

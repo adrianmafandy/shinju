@@ -12,6 +12,8 @@ import argparse
 import os
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 
 # ANSI color codes
@@ -141,6 +143,38 @@ def format_entry(name: str, is_dir: bool, match_count: int = 0, snippet: str = "
     return formatted
 
 
+def count_entries(
+    directory: Path,
+    show_hidden: bool = False,
+    dirs_only: bool = False,
+    max_depth: int = None,
+    current_depth: int = 0,
+) -> int:
+    """Count total entries for progress tracking."""
+    count = 0
+    
+    if max_depth is not None and current_depth >= max_depth:
+        return count
+    
+    try:
+        entries = list(directory.iterdir())
+    except PermissionError:
+        return count
+    
+    if not show_hidden:
+        entries = [e for e in entries if not e.name.startswith(".")]
+    
+    if dirs_only:
+        entries = [e for e in entries if e.is_dir()]
+    
+    for entry in entries:
+        count += 1
+        if entry.is_dir():
+            count += count_entries(entry, show_hidden, dirs_only, max_depth, current_depth + 1)
+    
+    return count
+
+
 def walk_tree(
     directory: Path,
     prefix: str = "",
@@ -153,6 +187,7 @@ def walk_tree(
     is_regex: bool = False,
     ignore_case: bool = False,
     match_only: bool = False,
+    progress_callback = None,
 ) -> tuple[list[str], dict]:
     """
     Recursively walk the directory tree and build the output.
@@ -193,6 +228,10 @@ def walk_tree(
         else:
             stats["files"] += 1
         
+        # Report progress
+        if progress_callback:
+            progress_callback()
+        
         # File name search
         if name_pattern:
             flags = re.IGNORECASE if ignore_case else 0
@@ -229,6 +268,7 @@ def walk_tree(
                 is_regex,
                 ignore_case,
                 match_only,
+                progress_callback,
             )
             
             # In match_only mode, only show directory if it has matches inside or name matched
@@ -301,8 +341,6 @@ def print_tree(
 
 
 def main():
-    print(BANNER)
-    
     parser = argparse.ArgumentParser(
         prog="shinju",
         description="A Python tree command with search functionality",
@@ -315,10 +353,13 @@ Examples:
   shinju -d                   Show directories only
   shinju -L 2                 Limit depth to 2 levels
   shinju -s "import"          Search for 'import' in files
-  shinju -s "def\\s+\\w+" -r   Search using regex pattern
+  shinju -s "def\\s+\\w+" -r    Search using regex pattern
   shinju -s "TODO" -i         Case-insensitive search
+  shinju -q                   Hide banner (quiet mode)
         """,
     )
+    
+
     
     parser.add_argument(
         "directory",
@@ -369,8 +410,16 @@ Examples:
         action="store_true",
         help="Show only matching files/directories",
     )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Hide the banner (quiet mode)",
+    )
     
     args = parser.parse_args()
+    
+    if not args.quiet:
+        print(BANNER)
     
     directory = Path(args.directory).resolve()
     
@@ -391,17 +440,89 @@ Examples:
             print(f"Error: Invalid regex pattern: {e}", file=sys.stderr)
             sys.exit(1)
     
-    print_tree(
-        directory,
-        show_hidden=args.show_hidden,
-        dirs_only=args.dirs_only,
-        max_depth=args.max_depth,
-        search_pattern=args.search,
-        name_pattern=args.name,
-        is_regex=args.regex,
-        ignore_case=args.ignore_case,
-        match_only=args.matches_only,
-    )
+    # Loading spinner with progress
+    stop_spinner = threading.Event()
+    spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    progress = {"current": 0, "total": 0}
+    
+    def spinner():
+        idx = 0
+        while not stop_spinner.is_set():
+            if progress["total"] > 0:
+                pct = min(100, int(progress["current"] / progress["total"] * 100))
+                sys.stdout.write(f"\r{Colors.CYAN}{spinner_chars[idx]}{Colors.RESET} Scanning... {pct}%")
+            else:
+                sys.stdout.write(f"\r{Colors.CYAN}{spinner_chars[idx]}{Colors.RESET} Counting...")
+            sys.stdout.flush()
+            idx = (idx + 1) % len(spinner_chars)
+            time.sleep(0.1)
+        sys.stdout.write("\r" + " " * 30 + "\r")
+        sys.stdout.flush()
+    
+    spinner_thread = threading.Thread(target=spinner, daemon=True)
+    spinner_thread.start()
+    
+    def update_progress():
+        progress["current"] += 1
+    
+    try:
+        # First count total entries
+        progress["total"] = count_entries(
+            directory,
+            args.show_hidden,
+            args.dirs_only,
+            args.max_depth,
+        )
+        
+        # Scan the tree with progress tracking
+        lines, stats = walk_tree(
+            directory,
+            "",
+            args.show_hidden,
+            args.dirs_only,
+            args.max_depth,
+            0,
+            args.search,
+            args.name,
+            args.regex,
+            args.ignore_case,
+            args.matches_only,
+            update_progress,
+        )
+        
+        # Stop spinner before printing
+        stop_spinner.set()
+        spinner_thread.join()
+        
+        # Print root directory
+        print(f"{Colors.BLUE}{Colors.BOLD}{directory}{Colors.RESET}")
+        
+        # Print tree lines
+        for line in lines:
+            print(line)
+        
+        # Print summary
+        print()
+        dir_text = "directory" if stats["dirs"] == 1 else "directories"
+        file_text = "file" if stats["files"] == 1 else "files"
+        
+        summary = f"{stats['dirs']} {dir_text}, {stats['files']} {file_text}"
+        
+        if args.name:
+            match_text = "name match" if stats["name_matches"] == 1 else "name matches"
+            summary += f", {Colors.GREEN}{stats['name_matches']} {match_text}{Colors.RESET}"
+        
+        if args.search:
+            match_text = "content match" if stats["content_matches"] == 1 else "content matches"
+            summary += f", {Colors.MAGENTA}{stats['content_matches']} {match_text}{Colors.RESET}"
+        
+        print(summary)
+        
+    except KeyboardInterrupt:
+        stop_spinner.set()
+        spinner_thread.join()
+        print(f"\n\n{Colors.YELLOW}[Interrupted]{Colors.RESET} Scan aborted by user.")
+        sys.exit(130)
 
 
 if __name__ == "__main__":

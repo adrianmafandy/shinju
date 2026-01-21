@@ -113,32 +113,41 @@ def search_file(filepath: Path, pattern: str, is_regex: bool, ignore_case: bool)
 
 
 def format_entry(name: str, is_dir: bool, match_count: int = 0, snippet: str = "", name_matched: bool = False, search_active: bool = False) -> str:
-    """Format a directory entry with optional highlighting."""
+    """Format a directory entry with optional highlighting and emojis."""
+    # Emoji icons
+    dir_icon = "📁 "
+    file_icon = "📄 "
+    match_icon = "✨ "
+    search_icon = "🔍 "
+    
     if name_matched and match_count > 0:
         # Both name match AND content match - show name in green + snippet only (no match count)
+        icon = dir_icon if is_dir else file_icon
         suffix = "/" if is_dir else ""
         formatted = (
-            f"{Colors.GREEN}{Colors.BOLD}{name}{suffix}{Colors.RESET} "
+            f"{match_icon}{Colors.GREEN}{Colors.BOLD}{name}{suffix}{Colors.RESET} "
             f"{Colors.CYAN}{snippet}{Colors.RESET}"
         )
     elif name_matched:
         # File name match only - show [match] indicator
+        icon = dir_icon if is_dir else file_icon
         suffix = "/" if is_dir else ""
-        formatted = f"{Colors.GREEN}{Colors.BOLD}{name}{suffix}{Colors.RESET} {Colors.YELLOW}[match]{Colors.RESET}"
+        formatted = f"{match_icon}{Colors.GREEN}{Colors.BOLD}{name}{suffix}{Colors.RESET} {Colors.YELLOW}[match]{Colors.RESET}"
     elif is_dir:
-        formatted = f"{Colors.BLUE}{Colors.BOLD}{name}/{Colors.RESET}"
+        formatted = f"{dir_icon}{Colors.BLUE}{Colors.BOLD}{name}/{Colors.RESET}"
     elif match_count > 0:
         # Content match only
         match_text = "match" if match_count == 1 else "matches"
         formatted = (
-            f"{Colors.MAGENTA}{Colors.BOLD}{name}{Colors.RESET} "
+            f"{search_icon}{Colors.MAGENTA}{Colors.BOLD}{name}{Colors.RESET} "
             f"{Colors.YELLOW}[{match_count} {match_text}]{Colors.RESET} "
             f"{Colors.CYAN}{snippet}{Colors.RESET}"
         )
     elif search_active:
-        formatted = f"{Colors.DIM}{name}{Colors.RESET}"
+        formatted = f"{file_icon}{Colors.DIM}{name}{Colors.RESET}"
     else:
-        formatted = name
+        icon = dir_icon if is_dir else file_icon
+        formatted = f"{icon}{name}"
     
     return formatted
 
